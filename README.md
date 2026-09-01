@@ -14,11 +14,17 @@ No accounts, no server, no build step. Everything is stored in your browser.
 
 **Deal** — set how many meals you want, slide the two dials, hit *Deal the week*.
 
-- **Already in the kitchen** is the pantry. Tap the ingredients you have on hand
-  and meals you can already mostly cover get favored — up to three times as
-  likely for one you have everything for. It's a thumb on the scale, never a
-  filter, so nothing drops out of the deck. Pantry items are struck through on
-  the card back and left off the shopping list entirely.
+- **Already in the kitchen** opens the pantry picker — a sheet listing every
+  ingredient in your deck, grouped by aisle with **Protein** and **Dairy** first,
+  with a search box for jumping straight to one. Tick what you have and meals you
+  can already mostly cover get favored — up to three times as likely for one you
+  have everything for. It's a thumb on the scale, never a filter, so nothing drops
+  out of the deck. Pantry items are struck through on the card back and left off
+  the shopping list entirely.
+
+  These ticks are **per session**: they survive a reload but clear when you close
+  the tab or the installed app. What's in the fridge changes week to week, and a
+  stale list would quietly skew every deal.
 - **Vibe** slides from *simple & quick* toward *fun & unique*. It aims the deal at
   meals of that effort level.
 - **Dial** slides from *healthy* toward *indulgent*. It sets a ceiling: at the
@@ -98,6 +104,13 @@ vercel.json           static hosting config
 tools/bundle.js       optional: inline everything into dist/preview.html
 ```
 
+Ingredients are sorted into aisles by a keyword table in `app.js`
+(`PANTRY_RULES`), applied to whatever you type into a meal — so ingredients on
+meals you add get grouped too, falling back to *Everything else* when nothing
+matches. The rules are ordered, because the obvious keywords collide:
+"Butternut squash" must not read as dairy, "Chickpeas" must not read as produce,
+"Sourdough loaf" must not read as sour cream.
+
 ## Typography
 
 Headlines use [Lora](https://fonts.google.com/specimen/Lora) from Google Fonts;
@@ -106,6 +119,8 @@ you're offline, headlines fall back to Georgia and the layout is unaffected.
 
 ## A note on your data
 
-Everything lives in this browser's `localStorage` under `foodpoker.v1` — the deck,
-the current hand, your pantry, and the checked-off list. It is not synced anywhere. Clearing site data wipes it, and a different phone is a
+The deck, the current hand and the checked-off shopping list live in this
+browser's `localStorage` under `foodpoker.v1`. The pantry is deliberately kept
+apart in `sessionStorage` under `foodpoker.pantry`, so it starts empty each
+session. Nothing is synced anywhere. Clearing site data wipes it, and a different phone is a
 different deck — export a backup from the **⋮** menu before you switch devices.

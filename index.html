@@ -34,11 +34,10 @@
           <label id="pantryLabel">Already in the kitchen</label>
           <span class="rule-val" id="pantryVal">Nothing on hand</span>
         </div>
-        <div class="pantry" id="pantryChips" role="group" aria-labelledby="pantryLabel"></div>
-        <div class="pantry-foot">
-          <button type="button" class="link-btn" id="pantryMore"></button>
-          <button type="button" class="link-btn" id="pantryClear" hidden>Clear</button>
-        </div>
+        <button type="button" class="pantry-open" id="pantryOpen" aria-labelledby="pantryLabel">
+          <span class="pantry-summary" id="pantrySummary">Tick what you already have</span>
+          <span class="pantry-chevron" aria-hidden="true">&rsaquo;</span>
+        </button>
       </div>
 
       <div class="rule rule--count">
@@ -132,6 +131,22 @@
   <button class="tab" data-view="list" role="tab">
     <span class="tab-ico">&#9826;</span><span>Shopping List</span><span class="tab-badge" id="listBadge" hidden></span></button>
 </nav>
+
+<!-- ======================= PANTRY PICKER ======================== -->
+<section class="sheet tall" id="pantrySheet" hidden aria-modal="true" role="dialog" aria-label="What is in the kitchen">
+  <div class="sheet-grip"></div>
+  <div class="sheet-top">
+    <h3 class="sheet-title">In the kitchen</h3>
+    <p class="sheet-note">Tick what you already have — meals you can mostly cover get favoured in the deal. This clears itself when you close the app.</p>
+    <input type="search" id="pantrySearch" class="search" placeholder="Search ingredients" aria-label="Search ingredients">
+  </div>
+  <div class="sheet-body" id="pantryGroups"></div>
+  <div class="sheet-foot">
+    <button type="button" class="pill-btn danger" id="pantryClear">Clear all</button>
+    <div class="grow"></div>
+    <button type="button" class="pill-btn primary" id="pantryDone">Done</button>
+  </div>
+</section>
 
 <!-- ====================== EDITOR SHEET ========================== -->
 <div class="sheet-scrim" id="scrim" hidden></div>

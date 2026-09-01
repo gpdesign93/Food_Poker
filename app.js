@@ -4,11 +4,72 @@
 'use strict';
 
 var KEY = 'foodpoker.v1';
+/* The pantry is deliberately session-scoped: what's in the fridge changes,
+   and a stale list would quietly skew every deal. sessionStorage survives a
+   reload but clears when the tab (or the installed app) closes. */
+var PANTRY_KEY = 'foodpoker.pantry';
 
 var EFFORT_LABEL     = ['', '15 minutes', 'Easy', 'Some work', 'A project', 'An event'];
 var INDULGENCE_LABEL = ['', 'Virtuous', 'Balanced', 'Middle', 'Rich', 'Full send'];
 
-var PANTRY_PREVIEW = 14;   /* chips shown before "show all" */
+/* Kitchen groups, in the order they appear in the picker. Protein and dairy
+   lead because they are what a week's cooking actually hinges on. */
+var PANTRY_GROUPS = [
+  { id: 'protein', name: 'Protein' },
+  { id: 'dairy',   name: 'Dairy' },
+  { id: 'produce', name: 'Produce' },
+  { id: 'grains',  name: 'Grains & bread' },
+  { id: 'cans',    name: 'Cans, jars & sauces' },
+  { id: 'spices',  name: 'Spices & seasonings' },
+  { id: 'other',   name: 'Everything else' }
+];
+
+/* Ordered substring rules — first match wins, so the compound names that
+   would otherwise be mis-filed come first. "Butternut squash" must beat
+   dairy's "butter", "Chickpeas" must beat produce's "pea", "Sourdough"
+   must beat dairy's "sour cream", "Rice vinegar" must beat grains' "rice". */
+var PANTRY_RULES = [
+  ['cans',    ['cream of chicken', 'cream of mushroom', 'coconut milk', 'san marzano',
+               'tomato paste', 'rice vinegar', 'pickled ginger', 'chickpea']],
+  ['dairy',   ['sour cream', 'evaporated milk']],
+  ['produce', ['butternut']],
+  ['grains',  ['sourdough']],
+  ['spices',  ['brown sugar', 'poppy seed']],
+
+  ['protein', ['ground beef', 'whole chicken', 'chicken', 'turkey', 'beef', 'pork',
+               'bacon', 'pepperoni', 'sausage', 'lamb', 'salmon', 'tuna', 'fish',
+               'shrimp', 'prawn', 'scallop', 'egg', 'tofu', 'tempeh', 'tobiko', 'anchov']],
+  ['dairy',   ['cheddar', 'parmesan', 'mozzarella', 'gruy', 'american', 'cotija',
+               'crema', 'feta', 'ricotta', 'mascarpone', 'butter', 'yogurt', 'yoghurt',
+               'cheese', 'cream', 'milk']],
+  ['produce', ['broccoli', 'kale', 'cabbage', 'carrot', 'potato', 'asparagus',
+               'cucumber', 'avocado', 'onion', 'scallion', 'shallot', 'garlic',
+               'ginger', 'lemon', 'lime', 'cilantro', 'basil', 'parsley', 'thyme',
+               'sage', 'rosemary', 'mint', 'squash', 'zucchini', 'pea', 'tomato',
+               'lettuce', 'spinach', 'mushroom', 'corn on', 'celery', 'apple']],
+  ['grains',  ['basmati', 'jasmine', 'rice', 'quinoa', 'pasta', 'fettuccine',
+               'spaghetti', 'noodle', 'panko', 'breadcrumb', 'tortilla', 'naan',
+               'pita', 'bun', 'loaf', 'bread', 'dough', 'cracker', 'semolina',
+               'flour', 'oats', 'couscous', 'barley', 'lentil']],
+  ['cans',    ['soup', 'stock', 'broth', 'sauce', 'paste', 'ketchup', 'worcestershire',
+               'marinara', 'mayo', 'tahini', 'caper', 'olive', 'oil', 'vinegar',
+               'adobo', 'chipotle', 'pickle', 'wine', 'crisp', 'jam', 'canned',
+               'salsa', 'beans']],
+  ['spices',  ['masala', 'mustard', 'furikake', 'wasabi', 'nori', 'sugar', 'cumin',
+               'paprika', 'cinnamon', 'turmeric', 'salt', 'pepper', 'spice', 'seed',
+               'powder', 'chili flake', 'vanilla']]
+];
+
+function pantryGroupOf(label) {
+  var s = String(label).toLowerCase();
+  for (var i = 0; i < PANTRY_RULES.length; i++) {
+    var words = PANTRY_RULES[i][1];
+    for (var j = 0; j < words.length; j++) {
+      if (s.indexOf(words[j]) > -1) return PANTRY_RULES[i][0];
+    }
+  }
+  return 'other';
+}
 
 var $  = function (s, r) { return (r || document).querySelector(s); };
 var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
@@ -21,8 +82,22 @@ var state;
 
 var DEFAULT_SETTINGS = {
   count: 5, adventure: 35, indulgence: 45,
-  dateNight: false, deckView: 'list', pantryOpen: false
+  dateNight: false, deckView: 'list'
 };
+
+var pantry = {};
+
+function loadPantry() {
+  try {
+    var raw = sessionStorage.getItem(PANTRY_KEY);
+    var p = raw ? JSON.parse(raw) : null;
+    return p && typeof p === 'object' ? p : {};
+  } catch (e) { return {}; }
+}
+
+function savePantry() {
+  try { sessionStorage.setItem(PANTRY_KEY, JSON.stringify(pantry)); } catch (e) { /* private mode */ }
+}
 
 function newId() {
   return 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -47,7 +122,6 @@ function freshState() {
     settings: Object.assign({}, DEFAULT_SETTINGS),
     hand: [],
     checked: {},
-    pantry: {},
     history: []
   };
 }
@@ -56,8 +130,8 @@ function normalize(s) {
   s.settings = Object.assign({}, DEFAULT_SETTINGS, s.settings);
   s.hand    = Array.isArray(s.hand) ? s.hand : [];
   s.checked = s.checked && typeof s.checked === 'object' ? s.checked : {};
-  s.pantry  = s.pantry  && typeof s.pantry  === 'object' ? s.pantry  : {};
   s.history = Array.isArray(s.history) ? s.history : [];
+  delete s.pantry;   /* pre-session-scope backups carried one; it is not saved now */
   return s;
 }
 
@@ -110,12 +184,12 @@ function pantryIndex() {
     .sort(function (a, b) { return b.count - a.count || a.label.localeCompare(b.label); });
 }
 
-function pantryCount() { return Object.keys(state.pantry).length; }
+function pantryCount() { return Object.keys(pantry).length; }
 
 /* How much of a meal you can already cover. */
 function haveCount(meal) {
   var n = 0;
-  meal.notable.forEach(function (raw) { if (state.pantry[key(raw)]) n++; });
+  meal.notable.forEach(function (raw) { if (pantry[key(raw)]) n++; });
   return n;
 }
 
@@ -383,7 +457,7 @@ function cardEl(meal, isDate) {
       (have ? '<div class="have-note">You have ' + have + ' of ' + meal.notable.length + '</div>' : '') +
       (meal.notable.length
         ? '<ul class="needs">' + meal.notable.map(function (n) {
-            return '<li class="' + (state.pantry[key(n)] ? 'have' : '') + '">' +
+            return '<li class="' + (pantry[key(n)] ? 'have' : '') + '">' +
                    esc(n) + '</li>'; }).join('') + '</ul>'
         : '<p class="needs-none">Nothing special.</p>') +
     '</div></div>';
@@ -473,54 +547,95 @@ function renderHand(animate) {
 }
 
 /* ================================================================
-   Render — the pantry
+   Render — the pantry picker
    ================================================================ */
 
-function renderPantry() {
+/* The tile is a summary and a way in; all the ticking happens in the sheet. */
+function renderPantryTile() {
+  var on = pantryIndex().filter(function (it) { return pantry[it.key]; });
+  $('#pantryVal').textContent = on.length ? on.length + ' on hand' : 'Nothing on hand';
+
+  var summary = $('#pantrySummary');
+  if (!on.length) {
+    summary.textContent = 'Tick what you already have';
+    summary.classList.add('is-empty');
+    return;
+  }
+  summary.classList.remove('is-empty');
+  var names = on.slice(0, 3).map(function (it) { return it.label; }).join(', ');
+  summary.textContent = on.length > 3 ? names + ' +' + (on.length - 3) + ' more' : names;
+}
+
+function renderPantrySheet() {
+  var q = $('#pantrySearch').value.trim().toLowerCase();
   var all = pantryIndex();
-  var on  = all.filter(function (it) { return state.pantry[it.key]; });
-  var off = all.filter(function (it) { return !state.pantry[it.key]; });
+  if (q) all = all.filter(function (it) { return it.key.indexOf(q) > -1; });
 
-  var shown = state.settings.pantryOpen
-    ? on.concat(off)
-    : on.concat(off.slice(0, Math.max(0, PANTRY_PREVIEW - on.length)));
-
-  var wrap = $('#pantryChips');
-  wrap.className = 'pantry' + (state.settings.pantryOpen ? ' expanded' : '');
+  var wrap = $('#pantryGroups');
   wrap.innerHTML = '';
 
   if (!all.length) {
-    wrap.innerHTML = '<p class="pantry-none">Add ingredients to your meals and they show up here.</p>';
+    wrap.innerHTML = '<p class="empty">' +
+      (q ? 'Nothing matches “' + esc($('#pantrySearch').value.trim()) + '”.'
+         : 'Add ingredients to your meals and they show up here.') + '</p>';
+    return;
   }
 
-  shown.forEach(function (it) {
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'pchip' + (state.pantry[it.key] ? ' on' : '');
-    b.textContent = it.label;
-    b.setAttribute('aria-pressed', state.pantry[it.key] ? 'true' : 'false');
-    b.addEventListener('click', function () {
-      if (state.pantry[it.key]) delete state.pantry[it.key];
-      else state.pantry[it.key] = true;
-      save();
-      renderPantry();
-      renderHand(false);
-      renderList();
-      if (state.settings.deckView === 'cards') renderBank();
-      hint(summaryText());
+  PANTRY_GROUPS.forEach(function (group) {
+    /* alphabetical inside a group: you are looking for a known item, so
+       predictable beats the index's most-used-first order */
+    var items = all.filter(function (it) { return pantryGroupOf(it.label) === group.id; })
+                   .sort(function (a, b) { return a.label.localeCompare(b.label); });
+    if (!items.length) return;
+
+    var on = items.filter(function (it) { return pantry[it.key]; }).length;
+
+    var section = document.createElement('section');
+    section.className = 'pantry-group';
+    section.innerHTML =
+      '<div class="pantry-group-head">' +
+        '<h4>' + esc(group.name) + '</h4>' +
+        '<span>' + (on ? on + ' of ' + items.length : items.length) + '</span>' +
+      '</div>';
+
+    var chips = document.createElement('div');
+    chips.className = 'pantry';
+
+    items.forEach(function (it) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pchip' + (pantry[it.key] ? ' on' : '');
+      b.textContent = it.label;
+      b.setAttribute('aria-pressed', pantry[it.key] ? 'true' : 'false');
+      b.addEventListener('click', function () {
+        if (pantry[it.key]) delete pantry[it.key];
+        else pantry[it.key] = true;
+        savePantry();
+        b.classList.toggle('on', !!pantry[it.key]);
+        b.setAttribute('aria-pressed', pantry[it.key] ? 'true' : 'false');
+        $('.pantry-group-head span', section).textContent =
+          (function () {
+            var n = items.filter(function (x) { return pantry[x.key]; }).length;
+            return n ? n + ' of ' + items.length : items.length;
+          })();
+        renderPantryTile();
+      });
+      chips.appendChild(b);
     });
-    wrap.appendChild(b);
+
+    section.appendChild(chips);
+    wrap.appendChild(section);
   });
+}
 
-  $('#pantryVal').textContent = on.length ? on.length + ' on hand' : 'Nothing on hand';
-
-  var more = $('#pantryMore');
-  if (all.length > shown.length || state.settings.pantryOpen) {
-    more.textContent = state.settings.pantryOpen ? 'Show fewer' : 'Show all ' + all.length;
-  } else {
-    more.textContent = '';
-  }
-  $('#pantryClear').hidden = on.length === 0;
+/* Everything the pantry feeds is re-rendered on close, not per tick — the
+   hand and the list are behind the sheet while it is open. */
+function applyPantry() {
+  renderPantryTile();
+  renderHand(false);
+  renderList();
+  if (state.settings.deckView === 'cards') renderBank();
+  hint(summaryText());
 }
 
 /* ================================================================
@@ -611,7 +726,7 @@ function buildList() {
       var label = String(raw).trim();
       if (!label) return;
       var k = key(label);
-      if (state.pantry[k]) { if (!items['~' + k]) { items['~' + k] = 1; haveAlready++; } return; }
+      if (pantry[k]) { if (!items['~' + k]) { items['~' + k] = 1; haveAlready++; } return; }
       if (!items[k]) items[k] = { label: label, meals: [] };
       if (items[k].meals.indexOf(meal.name) < 0) items[k].meals.push(meal.name);
     });
@@ -709,10 +824,13 @@ function openSheet(el) {
 }
 
 function closeSheets() {
+  var wasPantry = !$('#pantrySheet').hidden;
   $('#scrim').hidden = true;
   $('#editSheet').hidden = true;
   $('#menuSheet').hidden = true;
+  $('#pantrySheet').hidden = true;
   document.body.style.overflow = '';
+  if (wasPantry) applyPantry();
 }
 
 function paintStars() {
@@ -780,7 +898,7 @@ function saveEditor(e) {
   save();
   closeSheets();
   renderBank();
-  renderPantry();
+  renderPantryTile();
   renderHand(false);
   renderList();
   toast(editingId ? 'Saved' : 'Added to the deck');
@@ -798,7 +916,7 @@ function deleteMeal() {
   save();
   closeSheets();
   renderBank();
-  renderPantry();
+  renderPantryTile();
   renderHand(false);
   renderList();
   toast('Removed');
@@ -869,7 +987,7 @@ function syncControls() {
 }
 
 function renderAll() {
-  renderPantry();
+  renderPantryTile();
   renderHand(false);
   renderBank();
   renderList();
@@ -884,6 +1002,7 @@ function showView(name) {
 
 function init() {
   state = load();
+  pantry = loadPantry();
   syncControls();
   renderAll();
 
@@ -919,20 +1038,21 @@ function init() {
     hint(summaryText());
   });
 
-  $('#pantryMore').addEventListener('click', function () {
-    state.settings.pantryOpen = !state.settings.pantryOpen;
-    save();
-    renderPantry();
+  $('#pantryOpen').addEventListener('click', function () {
+    $('#pantrySearch').value = '';
+    renderPantrySheet();
+    openSheet($('#pantrySheet'));
   });
 
+  $('#pantrySearch').addEventListener('input', renderPantrySheet);
+
+  $('#pantryDone').addEventListener('click', closeSheets);
+
   $('#pantryClear').addEventListener('click', function () {
-    state.pantry = {};
-    save();
-    renderPantry();
-    renderHand(false);
-    renderList();
-    if (state.settings.deckView === 'cards') renderBank();
-    hint(summaryText());
+    pantry = {};
+    savePantry();
+    renderPantrySheet();
+    renderPantryTile();
   });
 
   $('#dealBtn').addEventListener('click', deal);
