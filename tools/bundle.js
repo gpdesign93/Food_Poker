@@ -15,6 +15,12 @@ const html = read('index.html');
 const css = read('styles.css');
 const js = read('data.js') + '\n' + read('app.js');
 
+/* Remote stylesheets live in <head>, which the fragment drops — hoist them
+   into @import rules at the top of the inlined <style> so webfonts survive. */
+const imports = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="(https:\/\/[^"]+)"/g)]
+  .map((m) => `@import url("${m[1]}");`)
+  .join('\n');
+
 const body = html
   .slice(html.indexOf('<body>') + '<body>'.length, html.indexOf('</body>'))
   .replace(/<script src="[^"]+"><\/script>\s*/g, '')
@@ -23,6 +29,7 @@ const body = html
 const out = [
   '<title>Food Poker</title>',
   '<style>',
+  imports,
   css.trim(),
   '</style>',
   body,

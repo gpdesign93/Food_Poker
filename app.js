@@ -8,6 +8,8 @@ var KEY = 'foodpoker.v1';
 var EFFORT_LABEL     = ['', '15 minutes', 'Easy', 'Some work', 'A project', 'An event'];
 var INDULGENCE_LABEL = ['', 'Virtuous', 'Balanced', 'Middle', 'Rich', 'Full send'];
 
+var PANTRY_PREVIEW = 14;   /* chips shown before "show all" */
+
 var $  = function (s, r) { return (r || document).querySelector(s); };
 var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
 
@@ -16,6 +18,11 @@ var $$ = function (s, r) { return Array.prototype.slice.call((r || document).que
    ================================================================ */
 
 var state;
+
+var DEFAULT_SETTINGS = {
+  count: 5, adventure: 35, indulgence: 45,
+  dateNight: false, deckView: 'list', pantryOpen: false
+};
 
 function newId() {
   return 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -37,11 +44,21 @@ function freshState() {
         dateNight: !!m.dateNight
       };
     }),
-    settings: { count: 5, adventure: 35, indulgence: 45, dateNight: false },
+    settings: Object.assign({}, DEFAULT_SETTINGS),
     hand: [],
     checked: {},
+    pantry: {},
     history: []
   };
+}
+
+function normalize(s) {
+  s.settings = Object.assign({}, DEFAULT_SETTINGS, s.settings);
+  s.hand    = Array.isArray(s.hand) ? s.hand : [];
+  s.checked = s.checked && typeof s.checked === 'object' ? s.checked : {};
+  s.pantry  = s.pantry  && typeof s.pantry  === 'object' ? s.pantry  : {};
+  s.history = Array.isArray(s.history) ? s.history : [];
+  return s;
 }
 
 function load() {
@@ -51,11 +68,7 @@ function load() {
   try {
     var s = JSON.parse(raw);
     if (!s || !Array.isArray(s.meals)) return freshState();
-    s.settings = Object.assign({ count: 5, adventure: 35, indulgence: 45, dateNight: false }, s.settings);
-    s.hand    = Array.isArray(s.hand) ? s.hand : [];
-    s.checked = s.checked && typeof s.checked === 'object' ? s.checked : {};
-    s.history = Array.isArray(s.history) ? s.history : [];
-    return s;
+    return normalize(s);
   } catch (e) {
     return freshState();
   }
@@ -76,17 +89,51 @@ function liveHand() {
 }
 
 /* ================================================================
+   Pantry — what you already have
+   ================================================================ */
+
+function key(str) { return String(str).trim().toLowerCase(); }
+
+/* Every distinct ingredient in the deck, most widely used first. */
+function pantryIndex() {
+  var map = {};
+  state.meals.forEach(function (meal) {
+    meal.notable.forEach(function (raw) {
+      var label = String(raw).trim();
+      if (!label) return;
+      var k = key(label);
+      if (!map[k]) map[k] = { key: k, label: label, count: 0 };
+      map[k].count++;
+    });
+  });
+  return Object.keys(map).map(function (k) { return map[k]; })
+    .sort(function (a, b) { return b.count - a.count || a.label.localeCompare(b.label); });
+}
+
+function pantryCount() { return Object.keys(state.pantry).length; }
+
+/* How much of a meal you can already cover. */
+function haveCount(meal) {
+  var n = 0;
+  meal.notable.forEach(function (raw) { if (state.pantry[key(raw)]) n++; });
+  return n;
+}
+
+/* ================================================================
    The deal
    ================================================================ */
 
-/* Two dials shape the odds:
+/* Three inputs shape the odds:
 
    Vibe      slides a target effort from 1..5 and prefers cards near it.
    Dial      sets a ceiling on indulgence. Cards above the ceiling are
              effectively out of the deck; sliding right raises it, which is
              what "introduces the less healthy options". Sliding all the way
              right also softly fades the most virtuous cards so the week
-             actually feels different — it never removes them.               */
+             actually feels different — it never removes them.
+   Pantry    boosts meals you can already mostly cover, up to 3x for one you
+             have everything for. It only applies once you've marked
+             something, and it never rules a meal out.                       */
 function weightFor(meal, o) {
   var targetEffort = 1 + (o.adventure / 100) * 4;
   var ceiling      = 1 + (o.indulgence / 100) * 4;
@@ -103,10 +150,23 @@ function weightFor(meal, o) {
 
   w *= 0.6 + (meal.rating / 5) * 0.8;
 
+  if (o.usePantry && meal.notable.length) {
+    w *= 1 + (haveCount(meal) / meal.notable.length) * 2;
+  }
+
   var seen = o.history.indexOf(meal.id);
   if (seen > -1) w *= Math.min(1, 0.22 + 0.16 * seen);
 
   return Math.max(w, 0.0005);
+}
+
+function dealOpts() {
+  return {
+    adventure: state.settings.adventure,
+    indulgence: state.settings.indulgence,
+    history: state.history,
+    usePantry: pantryCount() > 0
+  };
 }
 
 function pickWeighted(pool, used, opts, scorer) {
@@ -125,7 +185,8 @@ function pickWeighted(pool, used, opts, scorer) {
   return cands[cands.length - 1];
 }
 
-/* Date night wants the big, involved, well-loved stuff regardless of the dials. */
+/* Date night wants the big, involved, well-loved stuff regardless of the
+   dials — and regardless of the pantry, since you're shopping for it anyway. */
 function dateScore(meal, o) {
   var w = 1 + meal.effort * 0.9;
   w *= 0.5 + (meal.rating / 5);
@@ -145,7 +206,7 @@ function drawDateNight(used, opts) {
 
 function deal() {
   var s = state.settings;
-  var opts = { adventure: s.adventure, indulgence: s.indulgence, history: state.history };
+  var opts = dealOpts();
 
   var kept = liveHand().filter(function (slot) { return slot.locked; });
   var used = new Set(kept.map(function (slot) { return slot.mealId; }));
@@ -173,7 +234,7 @@ function deal() {
   state.hand = out;
   remember(out);
   save();
-  renderHand();
+  renderHand(true);
   renderList();
 
   var short = out.filter(function (x) { return !x.isDate; }).length < s.count;
@@ -182,12 +243,10 @@ function deal() {
     : summaryText());
 }
 
-function rerollSlot(index) {
-  var s = state.settings;
-  var opts = { adventure: s.adventure, indulgence: s.indulgence, history: state.history };
-  var slot = state.hand[index];
-  if (!slot) return;
-
+/* Redraws one slot and swaps only that card's DOM node, so the rest of the
+   hand neither re-renders nor re-animates. */
+function rerollSlot(slot, slotEl) {
+  var opts = dealOpts();
   var used = new Set(state.hand.map(function (x) { return x.mealId; }));
   var pick = slot.isDate ? drawDateNight(used, opts)
                          : pickWeighted(state.meals, used, opts, weightFor);
@@ -195,9 +254,13 @@ function rerollSlot(index) {
 
   slot.mealId = pick.id;
   slot.locked = false;
+
+  var fresh = buildSlot(slot);
+  fresh.classList.add('anim-swap');
+  slotEl.replaceWith(fresh);
+
   remember([slot]);
   save();
-  renderHand();
   renderList();
 }
 
@@ -250,7 +313,9 @@ function hint(msg) { $('#dealHint').textContent = msg; }
 
 function summaryText() {
   var s = state.settings;
-  return s.count + ' meals' + (s.dateNight ? ' + date night' : '') + ' · tap a card to flip it';
+  var n = pantryCount();
+  return s.count + ' meals' + (s.dateNight ? ' + date night' : '') +
+         (n ? ' · favoring what you have' : ' · tap a card to flip it');
 }
 
 function vibeLabel(v) {
@@ -270,121 +335,222 @@ function dialLabel(v) {
 }
 
 /* ================================================================
+   The card itself — shared by the hand and the deck's card view
+   ================================================================ */
+
+function cardEl(meal, isDate) {
+  var have = haveCount(meal);
+  var el = document.createElement('div');
+  el.className = 'card';
+  el.setAttribute('role', 'button');
+  el.setAttribute('tabindex', '0');
+  el.setAttribute('aria-label', meal.name + ', tap to flip');
+
+  el.innerHTML =
+    '<div class="face front">' +
+      '<div class="front-pad">' +
+        '<div class="card-top">' +
+          (isDate ? '<span class="badge date">Date night</span>'
+                  : '<span class="badge">' + esc(EFFORT_LABEL[meal.effort]) + '</span>') +
+          '<span class="health-dot" style="background:' + healthColor(meal.health) + '" ' +
+            'title="Health score">' + meal.health + '</span>' +
+        '</div>' +
+        '<div class="' + nameClass(meal.name) + '">' + esc(meal.name) + '</div>' +
+        '<div class="card-foot">' +
+          '<span class="stars">' + starRow(meal.rating) + '</span>' +
+          '<span class="flip-hint">flip &#8635;</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="face back"><div class="back-inner">' +
+      '<div class="back-title">' + esc(meal.name) + '</div>' +
+      '<div class="metric">' +
+        '<div class="metric-row"><span>Health</span><span>' + meal.health + '/100</span></div>' +
+        '<div class="bar"><i style="width:' + meal.health + '%;background:' +
+          healthColor(meal.health) + '"></i></div>' +
+      '</div>' +
+      '<div class="metric">' +
+        '<div class="metric-row"><span>Indulgence</span><span>' +
+          esc(INDULGENCE_LABEL[meal.indulgence]) + '</span></div>' +
+        '<div class="bar"><i style="width:' + (meal.indulgence / 5) * 100 +
+          '%;background:#d8543f"></i></div>' +
+      '</div>' +
+      (meal.chips.length
+        ? '<div class="chips">' + meal.chips.map(function (c) {
+            return '<span class="chip">' + esc(c) + '</span>'; }).join('') + '</div>'
+        : '') +
+      '<div class="need-title">Pick up</div>' +
+      (have ? '<div class="have-note">You have ' + have + ' of ' + meal.notable.length + '</div>' : '') +
+      (meal.notable.length
+        ? '<ul class="needs">' + meal.notable.map(function (n) {
+            return '<li class="' + (state.pantry[key(n)] ? 'have' : '') + '">' +
+                   esc(n) + '</li>'; }).join('') + '</ul>'
+        : '<p class="needs-none">Nothing special.</p>') +
+    '</div></div>';
+
+  function flip() { el.classList.toggle('flipped'); }
+  el.addEventListener('click', flip);
+  el.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); }
+  });
+
+  return el;
+}
+
+/* ================================================================
    Render — the hand
    ================================================================ */
 
-function renderHand() {
+function buildSlot(slot) {
+  var meal = mealById(slot.mealId);
+  var slotEl = document.createElement('div');
+  slotEl.className = 'slot' + (slot.locked ? ' locked' : '');
+
+  slotEl.appendChild(cardEl(meal, slot.isDate));
+
+  var tools = document.createElement('div');
+  tools.className = 'slot-tools';
+  tools.innerHTML =
+    '<button class="tool' + (slot.locked ? ' on' : '') + '" data-act="lock">' +
+      (slot.locked ? 'Locked' : 'Lock') + '</button>' +
+    '<button class="tool" data-act="reroll" aria-label="Swap out ' + esc(meal.name) + '">Swap</button>' +
+    '<button class="tool" data-act="remove" aria-label="Remove ' + esc(meal.name) + '">Drop</button>';
+  slotEl.appendChild(tools);
+
+  var lockBtn = $('[data-act=lock]', tools);
+  lockBtn.setAttribute('aria-label', (slot.locked ? 'Unlock ' : 'Lock ') + meal.name);
+
+  /* Lock flips in place — no re-render, so nothing animates. */
+  lockBtn.addEventListener('click', function () {
+    slot.locked = !slot.locked;
+    slotEl.classList.toggle('locked', slot.locked);
+    lockBtn.classList.toggle('on', slot.locked);
+    lockBtn.textContent = slot.locked ? 'Locked' : 'Lock';
+    lockBtn.setAttribute('aria-label', (slot.locked ? 'Unlock ' : 'Lock ') + meal.name);
+    save();
+  });
+
+  $('[data-act=reroll]', tools).addEventListener('click', function () {
+    rerollSlot(slot, slotEl);
+  });
+
+  $('[data-act=remove]', tools).addEventListener('click', function () {
+    slotEl.classList.add('anim-drop');
+    setTimeout(function () {
+      var idx = state.hand.indexOf(slot);
+      if (idx > -1) state.hand.splice(idx, 1);
+      slotEl.remove();
+      save();
+      $('#handEmpty').hidden = state.hand.length > 0;
+      renderList();
+    }, 190);
+  });
+
+  return slotEl;
+}
+
+function renderHand(animate) {
   var wrap = $('#hand');
   var hand = liveHand();
   if (hand.length !== state.hand.length) { state.hand = hand; save(); }
+
+  /* Keep any flipped cards flipped when we re-render for a non-deal reason. */
+  var wasFlipped = $$('#hand .card').map(function (c) { return c.classList.contains('flipped'); });
 
   $('#handEmpty').hidden = hand.length > 0;
   wrap.innerHTML = '';
 
   hand.forEach(function (slot, i) {
-    var meal = mealById(slot.mealId);
-    var slotEl = document.createElement('div');
-    slotEl.className = 'slot' + (slot.locked ? ' locked' : '');
-    slotEl.style.animationDelay = (i * 45) + 'ms';
-
-    slotEl.innerHTML =
-      '<div class="card" role="button" tabindex="0" aria-label="' + esc(meal.name) + ', tap to flip">' +
-        '<div class="face front">' +
-          '<div class="front-pad">' +
-            '<div class="card-top">' +
-              (slot.isDate ? '<span class="badge date">Date night</span>'
-                           : '<span class="badge">' + esc(EFFORT_LABEL[meal.effort]) + '</span>') +
-              '<span class="health-dot" style="background:' + healthColor(meal.health) + '" ' +
-                'title="Health score">' + meal.health + '</span>' +
-            '</div>' +
-            '<div class="' + nameClass(meal.name) + '">' + esc(meal.name) + '</div>' +
-            '<div class="card-foot">' +
-              '<span class="stars">' + starRow(meal.rating) + '</span>' +
-              '<span class="flip-hint">flip &#8635;</span>' +
-            '</div>' +
-          '</div>' +
-        '</div>' +
-        '<div class="face back"><div class="back-inner">' +
-          '<div class="back-title">' + esc(meal.name) + '</div>' +
-          '<div class="metric">' +
-            '<div class="metric-row"><span>Health</span><span>' + meal.health + '/100</span></div>' +
-            '<div class="bar"><i style="width:' + meal.health + '%;background:' +
-              healthColor(meal.health) + '"></i></div>' +
-          '</div>' +
-          '<div class="metric">' +
-            '<div class="metric-row"><span>Indulgence</span><span>' +
-              esc(INDULGENCE_LABEL[meal.indulgence]) + '</span></div>' +
-            '<div class="bar"><i style="width:' + (meal.indulgence / 5) * 100 +
-              '%;background:#d8543f"></i></div>' +
-          '</div>' +
-          (meal.chips.length
-            ? '<div class="chips">' + meal.chips.map(function (c) {
-                return '<span class="chip">' + esc(c) + '</span>'; }).join('') + '</div>'
-            : '') +
-          '<div class="need-title">Pick up</div>' +
-          (meal.notable.length
-            ? '<ul class="needs">' + meal.notable.map(function (n) {
-                return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>'
-            : '<p class="needs-none">Nothing special.</p>') +
-        '</div></div>' +
-      '</div>' +
-      '<div class="slot-tools">' +
-        '<button class="tool' + (slot.locked ? ' on' : '') + '" data-act="lock" ' +
-          'aria-label="' + (slot.locked ? 'Unlock' : 'Lock') + ' ' + esc(meal.name) + '">' +
-          (slot.locked ? 'Locked' : 'Lock') + '</button>' +
-        '<button class="tool" data-act="reroll" aria-label="Swap out ' + esc(meal.name) + '">Swap</button>' +
-        '<button class="tool" data-act="remove" aria-label="Remove ' + esc(meal.name) + '">Drop</button>' +
-      '</div>';
-
-    var card = $('.card', slotEl);
-    card.addEventListener('click', function () { slotEl.classList.toggle('flipped'); });
-    card.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); slotEl.classList.toggle('flipped'); }
-    });
-
-    $$('.tool', slotEl).forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var act = btn.getAttribute('data-act');
-        var idx = state.hand.indexOf(slot);
-        if (idx < 0) return;
-        if (act === 'lock') {
-          slot.locked = !slot.locked;
-          save();
-          renderHand();
-        } else if (act === 'reroll') {
-          rerollSlot(idx);
-        } else {
-          state.hand.splice(idx, 1);
-          save();
-          renderHand();
-          renderList();
-        }
-      });
-    });
-
+    var slotEl = buildSlot(slot);
+    if (animate) {
+      slotEl.classList.add('anim-deal');
+      slotEl.style.animationDelay = (i * 45) + 'ms';
+    } else if (wasFlipped[i]) {
+      $('.card', slotEl).classList.add('flipped');
+    }
     wrap.appendChild(slotEl);
   });
+}
+
+/* ================================================================
+   Render — the pantry
+   ================================================================ */
+
+function renderPantry() {
+  var all = pantryIndex();
+  var on  = all.filter(function (it) { return state.pantry[it.key]; });
+  var off = all.filter(function (it) { return !state.pantry[it.key]; });
+
+  var shown = state.settings.pantryOpen
+    ? on.concat(off)
+    : on.concat(off.slice(0, Math.max(0, PANTRY_PREVIEW - on.length)));
+
+  var wrap = $('#pantryChips');
+  wrap.className = 'pantry' + (state.settings.pantryOpen ? ' expanded' : '');
+  wrap.innerHTML = '';
+
+  if (!all.length) {
+    wrap.innerHTML = '<p class="pantry-none">Add ingredients to your meals and they show up here.</p>';
+  }
+
+  shown.forEach(function (it) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pchip' + (state.pantry[it.key] ? ' on' : '');
+    b.textContent = it.label;
+    b.setAttribute('aria-pressed', state.pantry[it.key] ? 'true' : 'false');
+    b.addEventListener('click', function () {
+      if (state.pantry[it.key]) delete state.pantry[it.key];
+      else state.pantry[it.key] = true;
+      save();
+      renderPantry();
+      renderHand(false);
+      renderList();
+      if (state.settings.deckView === 'cards') renderBank();
+      hint(summaryText());
+    });
+    wrap.appendChild(b);
+  });
+
+  $('#pantryVal').textContent = on.length ? on.length + ' on hand' : 'Nothing on hand';
+
+  var more = $('#pantryMore');
+  if (all.length > shown.length || state.settings.pantryOpen) {
+    more.textContent = state.settings.pantryOpen ? 'Show fewer' : 'Show all ' + all.length;
+  } else {
+    more.textContent = '';
+  }
+  $('#pantryClear').hidden = on.length === 0;
 }
 
 /* ================================================================
    Render — the deck
    ================================================================ */
 
-function renderBank() {
+function deckMatches() {
   var q = $('#bankSearch').value.trim().toLowerCase();
   var list = state.meals.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
-  if (q) {
-    list = list.filter(function (m) {
-      return m.name.toLowerCase().indexOf(q) > -1 ||
-             m.notable.join(' ').toLowerCase().indexOf(q) > -1 ||
-             m.chips.join(' ').toLowerCase().indexOf(q) > -1;
-    });
-  }
+  if (!q) return list;
+  return list.filter(function (m) {
+    return m.name.toLowerCase().indexOf(q) > -1 ||
+           m.notable.join(' ').toLowerCase().indexOf(q) > -1 ||
+           m.chips.join(' ').toLowerCase().indexOf(q) > -1;
+  });
+}
+
+function renderBank() {
+  var list = deckMatches();
+  var cards = state.settings.deckView === 'cards';
 
   $('#bankCount').textContent = state.meals.length + ' meals in the deck' +
-    (q ? ' · ' + list.length + ' matching' : '');
+    (list.length !== state.meals.length ? ' · ' + list.length + ' matching' : '');
+
+  $$('.seg-btn').forEach(function (b) {
+    b.classList.toggle('is-on', b.getAttribute('data-deck') === state.settings.deckView);
+  });
 
   var wrap = $('#bankList');
+  wrap.className = 'bank-list' + (cards ? ' as-cards' : '');
   wrap.innerHTML = '';
 
   if (!list.length) {
@@ -393,21 +559,42 @@ function renderBank() {
   }
 
   list.forEach(function (meal) {
-    var row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'bank-row';
-    row.innerHTML =
-      '<span class="bank-dot" style="background:' + healthColor(meal.health) + '"></span>' +
-      '<span class="bank-main">' +
-        '<span class="bank-name">' + esc(meal.name) +
-          (meal.dateNight ? ' &#10084;' : '') + '</span>' +
-        '<span class="bank-meta">' + esc(EFFORT_LABEL[meal.effort]) + ' · ' +
-          esc(INDULGENCE_LABEL[meal.indulgence]) + ' · ' + meal.notable.length + ' to buy</span>' +
-      '</span>' +
-      '<span class="bank-stars">' + starRow(meal.rating) + '</span>';
-    row.addEventListener('click', function () { openEditor(meal.id); });
-    wrap.appendChild(row);
+    wrap.appendChild(cards ? deckCard(meal) : deckRow(meal));
   });
+}
+
+function deckCard(meal) {
+  var slotEl = document.createElement('div');
+  slotEl.className = 'slot';
+  slotEl.appendChild(cardEl(meal, meal.dateNight));
+
+  var tools = document.createElement('div');
+  tools.className = 'slot-tools';
+  tools.innerHTML = '<button class="tool" data-act="edit" aria-label="Edit ' +
+                    esc(meal.name) + '">Edit</button>';
+  tools.firstChild.addEventListener('click', function () { openEditor(meal.id); });
+  slotEl.appendChild(tools);
+  return slotEl;
+}
+
+function deckRow(meal) {
+  var have = haveCount(meal);
+  var row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'bank-row';
+  row.innerHTML =
+    '<span class="bank-dot" style="background:' + healthColor(meal.health) + '"></span>' +
+    '<span class="bank-main">' +
+      '<span class="bank-name">' + esc(meal.name) +
+        (meal.dateNight ? ' &#10084;' : '') + '</span>' +
+      '<span class="bank-meta">' + esc(EFFORT_LABEL[meal.effort]) + ' · ' +
+        esc(INDULGENCE_LABEL[meal.indulgence]) + ' · ' +
+        (have ? have + ' of ' + meal.notable.length + ' on hand'
+              : meal.notable.length + ' to buy') + '</span>' +
+    '</span>' +
+    '<span class="bank-stars">' + starRow(meal.rating) + '</span>';
+  row.addEventListener('click', function () { openEditor(meal.id); });
+  return row;
 }
 
 /* ================================================================
@@ -416,19 +603,26 @@ function renderBank() {
 
 function buildList() {
   var items = {};
+  var haveAlready = 0;
+
   liveHand().forEach(function (slot) {
     var meal = mealById(slot.mealId);
     meal.notable.forEach(function (raw) {
       var label = String(raw).trim();
       if (!label) return;
-      var key = label.toLowerCase();
-      if (!items[key]) items[key] = { label: label, meals: [] };
-      if (items[key].meals.indexOf(meal.name) < 0) items[key].meals.push(meal.name);
+      var k = key(label);
+      if (state.pantry[k]) { if (!items['~' + k]) { items['~' + k] = 1; haveAlready++; } return; }
+      if (!items[k]) items[k] = { label: label, meals: [] };
+      if (items[k].meals.indexOf(meal.name) < 0) items[k].meals.push(meal.name);
     });
   });
-  return Object.keys(items).sort().map(function (k) {
-    return { key: k, label: items[k].label, meals: items[k].meals };
-  });
+
+  var out = Object.keys(items)
+    .filter(function (k) { return k.charAt(0) !== '~'; })
+    .sort()
+    .map(function (k) { return { key: k, label: items[k].label, meals: items[k].meals }; });
+  out.haveAlready = haveAlready;
+  return out;
 }
 
 function renderList() {
@@ -444,12 +638,15 @@ function renderList() {
   $('#listActions').hidden = items.length === 0;
 
   if (!items.length) {
-    wrap.innerHTML = '<p class="empty">Deal a week and the list fills itself.</p>';
+    wrap.innerHTML = '<p class="empty">' +
+      (liveHand().length ? 'You already have everything this week needs.'
+                         : 'Deal a week and the list fills itself.') + '</p>';
     $('#listSub').textContent = 'Notable ingredients from this week’s hand.';
     return;
   }
 
-  $('#listSub').textContent = open + ' of ' + items.length + ' still to grab.';
+  $('#listSub').textContent = open + ' of ' + items.length + ' still to grab.' +
+    (items.haveAlready ? ' ' + items.haveAlready + ' hidden — already in your kitchen.' : '');
 
   items.forEach(function (it) {
     var label = document.createElement('label');
@@ -583,7 +780,8 @@ function saveEditor(e) {
   save();
   closeSheets();
   renderBank();
-  renderHand();
+  renderPantry();
+  renderHand(false);
   renderList();
   toast(editingId ? 'Saved' : 'Added to the deck');
 }
@@ -600,7 +798,8 @@ function deleteMeal() {
   save();
   closeSheets();
   renderBank();
-  renderHand();
+  renderPantry();
+  renderHand(false);
   renderList();
   toast('Removed');
 }
@@ -632,12 +831,7 @@ function importBackup(file) {
       var data = JSON.parse(reader.result);
       if (!data || !Array.isArray(data.meals)) throw new Error('bad file');
       if (!confirm('Replace everything with this backup?')) return;
-      state = data;
-      state.settings = Object.assign({ count: 5, adventure: 35, indulgence: 45, dateNight: false },
-                                     state.settings);
-      state.hand    = Array.isArray(state.hand) ? state.hand : [];
-      state.checked = state.checked || {};
-      state.history = Array.isArray(state.history) ? state.history : [];
+      state = normalize(data);
       save();
       closeSheets();
       syncControls();
@@ -675,7 +869,8 @@ function syncControls() {
 }
 
 function renderAll() {
-  renderHand();
+  renderPantry();
+  renderHand(false);
   renderBank();
   renderList();
   hint(summaryText());
@@ -724,10 +919,34 @@ function init() {
     hint(summaryText());
   });
 
+  $('#pantryMore').addEventListener('click', function () {
+    state.settings.pantryOpen = !state.settings.pantryOpen;
+    save();
+    renderPantry();
+  });
+
+  $('#pantryClear').addEventListener('click', function () {
+    state.pantry = {};
+    save();
+    renderPantry();
+    renderHand(false);
+    renderList();
+    if (state.settings.deckView === 'cards') renderBank();
+    hint(summaryText());
+  });
+
   $('#dealBtn').addEventListener('click', deal);
 
   $('#bankSearch').addEventListener('input', renderBank);
   $('#addBtn').addEventListener('click', function () { openEditor(null); });
+
+  $$('.seg-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      state.settings.deckView = b.getAttribute('data-deck');
+      save();
+      renderBank();
+    });
+  });
 
   var starWrap = $('#f_rating');
   for (var i = 1; i <= 5; i++) {

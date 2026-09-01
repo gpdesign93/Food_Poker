@@ -14,6 +14,11 @@ No accounts, no server, no build step. Everything is stored in your browser.
 
 **Deal** — set how many meals you want, slide the two dials, hit *Deal the week*.
 
+- **Already in the kitchen** is the pantry. Tap the ingredients you have on hand
+  and meals you can already mostly cover get favored — up to three times as
+  likely for one you have everything for. It's a thumb on the scale, never a
+  filter, so nothing drops out of the deck. Pantry items are struck through on
+  the card back and left off the shopping list entirely.
 - **Vibe** slides from *simple & quick* toward *fun & unique*. It aims the deal at
   meals of that effort level.
 - **Dial** slides from *healthy* toward *indulgent*. It sets a ceiling: at the
@@ -31,10 +36,17 @@ Each dealt card has three buttons:
 | **Swap** | redraw just this card |
 | **Drop** | remove it from the week |
 
-Recently dealt meals are down-weighted for a while, so weeks don't rhyme.
+Recently dealt meals are down-weighted for a while, so weeks don't rhyme. Swapping
+a card replaces only that card — the rest of the hand doesn't re-deal or re-animate.
 
-**Deck** — the whole bank of meals. Tap any card to edit its effort, indulgence,
-health score, stars, notes, and ingredients, or use **+ Add meal** to add one.
+On a phone it's one scrolling column. From 960px wide it becomes a sticky control
+rail beside a full field of cards, so you can keep re-dealing without scrolling.
+
+**Deck** — the whole bank of meals, as a scannable **list** or as flippable
+**cards** (the toggle sits above the deck and is remembered). In list view, tap a
+row to edit it; in card view, tap to flip and use *Edit* underneath. **+ Add meal**
+adds one. Every meal has effort, indulgence, health score, stars, notes, and its
+notable ingredients.
 
 **List** — every notable ingredient across the week's hand, deduped, with the
 meals that need it. Check things off as you shop; *Copy list* puts whatever's
@@ -86,8 +98,14 @@ vercel.json           static hosting config
 tools/bundle.js       optional: inline everything into dist/preview.html
 ```
 
+## Typography
+
+Headlines use [Lora](https://fonts.google.com/specimen/Lora) from Google Fonts;
+everything operational is the system rounded sans. If Google Fonts is blocked or
+you're offline, headlines fall back to Georgia and the layout is unaffected.
+
 ## A note on your data
 
-Everything lives in this browser's `localStorage` under `foodpoker.v1`. It is not
-synced anywhere. Clearing site data wipes it, and a different phone is a
+Everything lives in this browser's `localStorage` under `foodpoker.v1` — the deck,
+the current hand, your pantry, and the checked-off list. It is not synced anywhere. Clearing site data wipes it, and a different phone is a
 different deck — export a backup from the **⋮** menu before you switch devices.
