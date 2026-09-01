@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Food Poker — deal a week of dinners</title>
+<meta name="description" content="Shuffle your meal deck and deal a week of dinners.">
+<meta name="theme-color" content="#0e1a14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <h1 class="wordmark"><span class="pip">&#9824;</span>Food Poker</h1>
+  <button class="ghost-btn" id="menuBtn" aria-label="Data options">&#8942;</button>
+</header>
+
+<!-- ============================ DEAL ============================ -->
+<main id="view-deal" class="view is-active">
+
+  <section class="rules" aria-label="Deal settings">
+
+    <div class="rule">
+      <div class="rule-head">
+        <label for="countInput">Meals this week</label>
+        <div class="stepper">
+          <button type="button" class="step" data-step="-1" aria-label="One fewer meal">&minus;</button>
+          <output id="countInput" class="step-val">5</output>
+          <button type="button" class="step" data-step="1" aria-label="One more meal">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="rule">
+      <div class="rule-head">
+        <label for="adventure">Vibe</label>
+        <span class="rule-val" id="adventureVal">Balanced</span>
+      </div>
+      <input type="range" id="adventure" min="0" max="100" value="35" step="1"
+             aria-describedby="adventureVal">
+      <div class="ends"><span>Simple &amp; quick</span><span>Fun &amp; unique</span></div>
+    </div>
+
+    <div class="rule">
+      <div class="rule-head">
+        <label for="indulgence">Dial</label>
+        <span class="rule-val" id="indulgenceVal">Mostly good</span>
+      </div>
+      <input type="range" id="indulgence" min="0" max="100" value="45" step="1"
+             aria-describedby="indulgenceVal">
+      <div class="ends"><span>Healthy</span><span>Indulgent</span></div>
+    </div>
+
+    <label class="toggle" for="dateNight">
+      <input type="checkbox" id="dateNight">
+      <span class="track"><span class="thumb"></span></span>
+      <span class="toggle-text">
+        <strong>Date Night</strong>
+        <small>Adds one big, interactive, special meal</small>
+      </span>
+    </label>
+
+  </section>
+
+  <div class="deal-bar">
+    <button id="dealBtn" class="deal-btn">Deal the week</button>
+    <p class="deal-hint" id="dealHint">Locked cards stay put.</p>
+  </div>
+
+  <div id="hand" class="hand"></div>
+  <p id="handEmpty" class="empty">Set the table, then deal.</p>
+</main>
+
+<!-- ============================ BANK ============================ -->
+<main id="view-bank" class="view">
+  <div class="bank-tools">
+    <input type="search" id="bankSearch" class="search" placeholder="Search the deck" aria-label="Search meals">
+    <button id="addBtn" class="pill-btn primary">+ Add meal</button>
+  </div>
+  <p class="bank-count" id="bankCount"></p>
+  <div id="bankList" class="bank-list"></div>
+</main>
+
+<!-- ============================ LIST ============================ -->
+<main id="view-list" class="view">
+  <div class="list-head">
+    <h2>Shopping list</h2>
+    <p class="sub" id="listSub">Notable ingredients from this week's hand.</p>
+  </div>
+  <div id="shopList" class="shop-list"></div>
+  <div class="list-actions" id="listActions" hidden>
+    <button id="copyListBtn" class="pill-btn">Copy list</button>
+    <button id="uncheckBtn" class="pill-btn">Uncheck all</button>
+  </div>
+</main>
+
+<nav class="tabs" role="tablist">
+  <button class="tab is-active" data-view="deal" role="tab">
+    <span class="tab-ico">&#9824;</span><span>Deal</span></button>
+  <button class="tab" data-view="bank" role="tab">
+    <span class="tab-ico">&#9827;</span><span>Deck</span></button>
+  <button class="tab" data-view="list" role="tab">
+    <span class="tab-ico">&#9826;</span><span>List</span><span class="tab-badge" id="listBadge" hidden></span></button>
+</nav>
+
+<!-- ====================== EDITOR SHEET ========================== -->
+<div class="sheet-scrim" id="scrim" hidden></div>
+
+<section class="sheet" id="editSheet" hidden aria-modal="true" role="dialog" aria-label="Edit meal">
+  <div class="sheet-grip"></div>
+  <form id="editForm" class="sheet-body">
+    <input type="hidden" id="f_id">
+
+    <label class="field">
+      <span>Meal</span>
+      <input type="text" id="f_name" required maxlength="42" placeholder="Sheet pan gnocchi" autocomplete="off">
+    </label>
+
+    <div class="field">
+      <span>Your rating</span>
+      <div class="star-input" id="f_rating" role="radiogroup" aria-label="Rating"></div>
+    </div>
+
+    <label class="field">
+      <span>Effort <em id="f_effortLbl"></em></span>
+      <input type="range" id="f_effort" min="1" max="5" step="1" value="2">
+      <div class="ends"><span>Quick</span><span>A project</span></div>
+    </label>
+
+    <label class="field">
+      <span>Indulgence <em id="f_indulgenceLbl"></em></span>
+      <input type="range" id="f_indulgence" min="1" max="5" step="1" value="3">
+      <div class="ends"><span>Virtuous</span><span>Full send</span></div>
+    </label>
+
+    <label class="field">
+      <span>Health score <em id="f_healthLbl"></em></span>
+      <input type="range" id="f_health" min="0" max="100" step="1" value="60">
+    </label>
+
+    <label class="field">
+      <span>Notes <em>comma separated, 3 max</em></span>
+      <input type="text" id="f_chips" maxlength="80" placeholder="High protein, Veg-forward" autocomplete="off">
+    </label>
+
+    <label class="field">
+      <span>Notable ingredients <em>one per line</em></span>
+      <textarea id="f_notable" rows="5" placeholder="Sashimi-grade salmon&#10;Nori&#10;Rice vinegar"></textarea>
+    </label>
+
+    <label class="toggle compact" for="f_dateNight">
+      <input type="checkbox" id="f_dateNight">
+      <span class="track"><span class="thumb"></span></span>
+      <span class="toggle-text"><strong>Date night material</strong></span>
+    </label>
+
+    <div class="sheet-actions">
+      <button type="button" class="pill-btn danger" id="deleteBtn">Delete</button>
+      <div class="grow"></div>
+      <button type="button" class="pill-btn" id="cancelBtn">Cancel</button>
+      <button type="submit" class="pill-btn primary">Save</button>
+    </div>
+  </form>
+</section>
+
+<!-- ======================== DATA MENU =========================== -->
+<section class="sheet" id="menuSheet" hidden aria-modal="true" role="dialog" aria-label="Data options">
+  <div class="sheet-grip"></div>
+  <div class="sheet-body">
+    <h3 class="sheet-title">Your data</h3>
+    <p class="sheet-note">Everything lives in this browser only. Export a backup before switching phones.</p>
+    <div class="menu-actions">
+      <button class="pill-btn" id="exportBtn">Export backup</button>
+      <button class="pill-btn" id="importBtn">Import backup</button>
+      <button class="pill-btn danger" id="resetBtn">Reset deck to defaults</button>
+    </div>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
+    <button type="button" class="pill-btn wide" id="menuCloseBtn">Close</button>
+  </div>
+</section>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "Food Poker",
+  "short_name": "Food Poker",
+  "description": "Shuffle your meal deck and deal a week of dinners.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1a14",
+  "theme_color": "#0e1a14",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
