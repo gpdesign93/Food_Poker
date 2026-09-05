@@ -155,7 +155,7 @@
   <div class="sheet-grip"></div>
   <form id="writeInForm" class="sheet-body">
     <h3 class="sheet-title">Write in a meal</h3>
-    <p class="sheet-note">Something you already know you want this week. It joins the hand without joining the deck.</p>
+    <p class="sheet-note">Something you already know you want this week. It joins the hand and is kept in your deck, so it can be dealt again later — tune its rating and health on the Deck tab whenever you like.</p>
 
     <label class="field">
       <span>Meal</span>
@@ -167,17 +167,7 @@
       <textarea id="w_notable" rows="4" placeholder="Rotisserie chicken&#10;Bagged salad"></textarea>
     </label>
 
-    <label class="toggle compact" for="w_toDeck">
-      <input type="checkbox" id="w_toDeck">
-      <span class="track"><span class="thumb"></span></span>
-      <span class="toggle-text">
-        <strong>Keep it in the deck too</strong>
-        <small>So it can be dealt in future weeks</small>
-      </span>
-    </label>
-
     <div class="sheet-actions">
-      <button type="button" class="pill-btn danger" id="w_remove">Remove</button>
       <div class="grow"></div>
       <button type="button" class="pill-btn" id="w_cancel">Cancel</button>
       <button type="submit" class="pill-btn primary">Add</button>

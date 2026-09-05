@@ -43,21 +43,15 @@ Each dealt card has three buttons:
 | **Drop** | remove it from the week |
 
 **Write-ins.** The hand always ends with a dashed *Write in a meal* card, for the
-weeks where you already know one or two of the answers — leftovers night, takeout,
-a recipe you want to try. A write-in joins the hand without joining the deck, and
-counts as one of your meals rather than an extra, so a five-meal week with one
-write-in deals four. Write-ins are locked by definition, so re-dealing keeps them,
-and their buttons read **Lock / Edit / Drop**. Anything you list under *Anything to
-buy?* flows into the shopping list like any other card. They carry no rating,
-health score or effort — inventing those would put fake numbers on the card — so
-the face just leaves them off. Tick *Keep it in the deck too* if it turns out to
-be a keeper. Two at a time; the placeholder disappears at the cap.
+weeks where you already know one of the answers — leftovers night, takeout, a
+recipe you want to try. Type a name and anything you need to buy, and it lands in
+this week's hand **and in your deck**, so it can be dealt again later. Write-ins
+count as one of your meals rather than an extra, so a five-meal week with one
+write-in deals four, and they arrive locked so re-dealing keeps them. A name that
+already exists in the deck is reused rather than duplicated.
 
-Recently dealt meals are down-weighted for a while, so weeks don't rhyme. Swapping
-a card replaces only that card — the rest of the hand doesn't re-deal or re-animate.
-
-On a phone it's one scrolling column. From 960px wide it becomes a sticky control
-rail beside a full field of cards, so you can keep re-dealing without scrolling.
+A written meal starts on neutral defaults — *Easy*, health 60, four stars — since
+the deal needs those to weight it. Tune them on the Deck tab whenever you like.
 
 **Deck** — the whole bank of meals, as a scannable **list** or as flippable
 **cards** (the toggle sits above the deck and is remembered). In list view, tap a
