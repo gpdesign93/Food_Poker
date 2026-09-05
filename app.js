@@ -87,6 +87,8 @@ var DEFAULT_SETTINGS = {
 
 var pantry = {};
 
+var MAX_WRITE_INS = 2;
+
 function loadPantry() {
   try {
     var raw = sessionStorage.getItem(PANTRY_KEY);
@@ -157,9 +159,32 @@ function mealById(id) {
   return null;
 }
 
+/* A slot is either a card from the deck or a meal you wrote in yourself.
+   Write-ins carry their own data, so they survive a meal being deleted. */
+function slotMeal(slot) {
+  if (slot.writeIn) {
+    return {
+      id: null,
+      writeIn: true,
+      name: slot.writeIn.name,
+      notable: slot.writeIn.notable || [],
+      chips: []
+    };
+  }
+  return mealById(slot.mealId);
+}
+
+function isWriteIn(slot) { return !!slot.writeIn; }
+
+function writeInCount() {
+  return state.hand.filter(isWriteIn).length;
+}
+
 /* Hand slots can outlive the meals they point at (deleted from the deck). */
 function liveHand() {
-  return state.hand.filter(function (slot) { return !!mealById(slot.mealId); });
+  return state.hand.filter(function (slot) {
+    return isWriteIn(slot) || !!mealById(slot.mealId);
+  });
 }
 
 /* ================================================================
@@ -171,7 +196,9 @@ function key(str) { return String(str).trim().toLowerCase(); }
 /* Every distinct ingredient in the deck, most widely used first. */
 function pantryIndex() {
   var map = {};
-  state.meals.forEach(function (meal) {
+  var sources = state.meals.concat(
+    state.hand.filter(isWriteIn).map(slotMeal));
+  sources.forEach(function (meal) {
     meal.notable.forEach(function (raw) {
       var label = String(raw).trim();
       if (!label) return;
@@ -282,8 +309,10 @@ function deal() {
   var s = state.settings;
   var opts = dealOpts();
 
-  var kept = liveHand().filter(function (slot) { return slot.locked; });
-  var used = new Set(kept.map(function (slot) { return slot.mealId; }));
+  /* write-ins are locked by definition — you asked for that meal */
+  var kept = liveHand().filter(function (slot) { return slot.locked || isWriteIn(slot); });
+  var used = new Set(kept.filter(function (slot) { return slot.mealId; })
+                         .map(function (slot) { return slot.mealId; }));
 
   var out = kept.filter(function (slot) { return !slot.isDate; });
 
@@ -341,6 +370,7 @@ function rerollSlot(slot, slotEl) {
 /* Recently dealt meals get down-weighted so weeks don't rhyme. */
 function remember(slots) {
   slots.forEach(function (slot) {
+    if (!slot.mealId) return;          /* write-ins are not dealt, so not remembered */
     var i = state.history.indexOf(slot.mealId);
     if (i > -1) state.history.splice(i, 1);
     state.history.unshift(slot.mealId);
@@ -414,11 +444,45 @@ function dialLabel(v) {
 
 function cardEl(meal, isDate) {
   var have = haveCount(meal);
+  var mine = !!meal.writeIn;
   var el = document.createElement('div');
   el.className = 'card';
   el.setAttribute('role', 'button');
   el.setAttribute('tabindex', '0');
   el.setAttribute('aria-label', meal.name + ', tap to flip');
+
+  /* A written-in meal has no rating, health score or effort — inventing
+     them would put fake numbers on the card, so the face just drops them. */
+  if (mine) {
+    el.innerHTML =
+      '<div class="face front mine">' +
+        '<div class="front-pad">' +
+          '<div class="card-top">' +
+            '<span class="badge mine">Yours</span>' +
+          '</div>' +
+          '<div class="' + nameClass(meal.name) + '">' + esc(meal.name) + '</div>' +
+          '<div class="card-foot">' +
+            '<span class="flip-hint">flip &#8635;</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="face back mine"><div class="back-inner">' +
+        '<div class="back-title">' + esc(meal.name) + '</div>' +
+        '<div class="need-title">Pick up</div>' +
+        (have ? '<div class="have-note">You have ' + have + ' of ' + meal.notable.length + '</div>' : '') +
+        (meal.notable.length
+          ? '<ul class="needs">' + meal.notable.map(function (n) {
+              return '<li class="' + (pantry[key(n)] ? 'have' : '') + '">' +
+                     esc(n) + '</li>'; }).join('') + '</ul>'
+          : '<p class="needs-none">Nothing noted.</p>') +
+      '</div></div>';
+
+    el.addEventListener('click', function () { el.classList.toggle('flipped'); });
+    el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.classList.toggle('flipped'); }
+    });
+    return el;
+  }
 
   el.innerHTML =
     '<div class="face front">' +
@@ -476,7 +540,8 @@ function cardEl(meal, isDate) {
    ================================================================ */
 
 function buildSlot(slot) {
-  var meal = mealById(slot.mealId);
+  var meal = slotMeal(slot);
+  var mine = isWriteIn(slot);
   var slotEl = document.createElement('div');
   slotEl.className = 'slot' + (slot.locked ? ' locked' : '');
 
@@ -487,7 +552,9 @@ function buildSlot(slot) {
   tools.innerHTML =
     '<button class="tool' + (slot.locked ? ' on' : '') + '" data-act="lock">' +
       (slot.locked ? 'Locked' : 'Lock') + '</button>' +
-    '<button class="tool" data-act="reroll" aria-label="Swap out ' + esc(meal.name) + '">Swap</button>' +
+    (mine
+      ? '<button class="tool" data-act="edit" aria-label="Edit ' + esc(meal.name) + '">Edit</button>'
+      : '<button class="tool" data-act="reroll" aria-label="Swap out ' + esc(meal.name) + '">Swap</button>') +
     '<button class="tool" data-act="remove" aria-label="Remove ' + esc(meal.name) + '">Drop</button>';
   slotEl.appendChild(tools);
 
@@ -504,9 +571,15 @@ function buildSlot(slot) {
     save();
   });
 
-  $('[data-act=reroll]', tools).addEventListener('click', function () {
-    rerollSlot(slot, slotEl);
-  });
+  if (mine) {
+    $('[data-act=edit]', tools).addEventListener('click', function () {
+      openWriteIn(slot);
+    });
+  } else {
+    $('[data-act=reroll]', tools).addEventListener('click', function () {
+      rerollSlot(slot, slotEl);
+    });
+  }
 
   $('[data-act=remove]', tools).addEventListener('click', function () {
     slotEl.classList.add('anim-drop');
@@ -544,6 +617,23 @@ function renderHand(animate) {
     }
     wrap.appendChild(slotEl);
   });
+
+  if (writeInCount() < MAX_WRITE_INS) wrap.appendChild(writeInPlaceholder());
+}
+
+/* An always-present slot at the end of the hand for a meal you already
+   know you want. Capped, so it stays an exception rather than a planner. */
+function writeInPlaceholder() {
+  var el = document.createElement('div');
+  el.className = 'slot slot-add';
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'add-card';
+  btn.innerHTML = '<span class="add-plus" aria-hidden="true">+</span>' +
+                  '<span class="add-label">Write in a meal</span>';
+  btn.addEventListener('click', function () { openWriteIn(null); });
+  el.appendChild(btn);
+  return el;
 }
 
 /* ================================================================
@@ -721,7 +811,7 @@ function buildList() {
   var haveAlready = 0;
 
   liveHand().forEach(function (slot) {
-    var meal = mealById(slot.mealId);
+    var meal = slotMeal(slot);
     meal.notable.forEach(function (raw) {
       var label = String(raw).trim();
       if (!label) return;
@@ -811,6 +901,73 @@ function copyText(text, okMsg) {
 }
 
 /* ================================================================
+   Write-in sheet
+   ================================================================ */
+
+var writingSlot = null;   /* the slot being edited, or null for a new one */
+
+function openWriteIn(slot) {
+  writingSlot = slot;
+  var w = slot ? slot.writeIn : null;
+
+  $('#w_name').value     = w ? w.name : '';
+  $('#w_notable').value  = w ? (w.notable || []).join('\n') : '';
+  $('#w_toDeck').checked = false;
+  $('#w_remove').hidden  = !slot;
+  $('#writeInForm button[type=submit]').textContent = slot ? 'Save' : 'Add';
+
+  openSheet($('#writeInSheet'));
+  if (!slot) setTimeout(function () { $('#w_name').focus(); }, 260);
+}
+
+function saveWriteIn(e) {
+  e.preventDefault();
+  var name = $('#w_name').value.trim();
+  if (!name) return;
+
+  var notable = $('#w_notable').value.split('\n')
+    .map(function (s) { return s.trim(); })
+    .filter(Boolean);
+
+  if (writingSlot) {
+    writingSlot.writeIn = { name: name, notable: notable };
+  } else {
+    state.hand.push({ writeIn: { name: name, notable: notable }, locked: true, isDate: false });
+  }
+
+  /* Opt-in: the same meal next week without retyping it. */
+  if ($('#w_toDeck').checked) {
+    state.meals.push({
+      id: newId(), name: name,
+      effort: 2, indulgence: 3, health: 60, rating: 4,
+      chips: [], notable: notable, dateNight: false
+    });
+  }
+
+  save();
+  closeSheets();
+  renderHand(false);
+  renderPantryTile();
+  renderList();
+  renderBank();
+  toast(writingSlot ? 'Saved' : 'Added to the week');
+  writingSlot = null;
+}
+
+function removeWriteIn() {
+  if (!writingSlot) return;
+  var idx = state.hand.indexOf(writingSlot);
+  if (idx > -1) state.hand.splice(idx, 1);
+  writingSlot = null;
+  save();
+  closeSheets();
+  renderHand(false);
+  renderPantryTile();
+  renderList();
+  toast('Removed');
+}
+
+/* ================================================================
    Editor sheet
    ================================================================ */
 
@@ -829,6 +986,7 @@ function closeSheets() {
   $('#editSheet').hidden = true;
   $('#menuSheet').hidden = true;
   $('#pantrySheet').hidden = true;
+  $('#writeInSheet').hidden = true;
   document.body.style.overflow = '';
   if (wasPantry) applyPantry();
 }
@@ -1084,6 +1242,10 @@ function init() {
   $('#f_effort').addEventListener('input', paintEditLabels);
   $('#f_indulgence').addEventListener('input', paintEditLabels);
   $('#f_health').addEventListener('input', paintEditLabels);
+
+  $('#writeInForm').addEventListener('submit', saveWriteIn);
+  $('#w_cancel').addEventListener('click', closeSheets);
+  $('#w_remove').addEventListener('click', removeWriteIn);
 
   $('#editForm').addEventListener('submit', saveEditor);
   $('#cancelBtn').addEventListener('click', closeSheets);

@@ -123,6 +123,8 @@
   </div>
 </main>
 
+<footer class="credit">vibe coded by <em>Grayson &ndash; Creative</em></footer>
+
 <nav class="tabs" role="tablist">
   <button class="tab is-active" data-view="deal" role="tab">
     <span class="tab-ico">&#9824;</span><span>Deal</span></button>
@@ -146,6 +148,41 @@
     <div class="grow"></div>
     <button type="button" class="pill-btn primary" id="pantryDone">Done</button>
   </div>
+</section>
+
+<!-- ======================= WRITE-IN SHEET ======================= -->
+<section class="sheet" id="writeInSheet" hidden aria-modal="true" role="dialog" aria-label="Write in a meal">
+  <div class="sheet-grip"></div>
+  <form id="writeInForm" class="sheet-body">
+    <h3 class="sheet-title">Write in a meal</h3>
+    <p class="sheet-note">Something you already know you want this week. It joins the hand without joining the deck.</p>
+
+    <label class="field">
+      <span>Meal</span>
+      <input type="text" id="w_name" required maxlength="42" placeholder="Leftovers night" autocomplete="off">
+    </label>
+
+    <label class="field">
+      <span>Anything to buy? <em>one per line, optional</em></span>
+      <textarea id="w_notable" rows="4" placeholder="Rotisserie chicken&#10;Bagged salad"></textarea>
+    </label>
+
+    <label class="toggle compact" for="w_toDeck">
+      <input type="checkbox" id="w_toDeck">
+      <span class="track"><span class="thumb"></span></span>
+      <span class="toggle-text">
+        <strong>Keep it in the deck too</strong>
+        <small>So it can be dealt in future weeks</small>
+      </span>
+    </label>
+
+    <div class="sheet-actions">
+      <button type="button" class="pill-btn danger" id="w_remove">Remove</button>
+      <div class="grow"></div>
+      <button type="button" class="pill-btn" id="w_cancel">Cancel</button>
+      <button type="submit" class="pill-btn primary">Add</button>
+    </div>
+  </form>
 </section>
 
 <!-- ====================== EDITOR SHEET ========================== -->

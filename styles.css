@@ -64,6 +64,7 @@ h1,h2,h3 { margin:0; font-weight:750; letter-spacing:-.02em; }
 
 button, input, textarea { font:inherit; color:inherit; }
 button { cursor:pointer; border:0; background:none; }
+button, input, .tab, .pchip { touch-action:manipulation; }
 
 /* ------------------------------- top bar ------------------------ */
 .topbar {
@@ -143,16 +144,26 @@ input[type=range]:active::-webkit-slider-thumb { transform:scale(1.12); }
 
 /* stepper */
 .stepper {
-  display:flex; align-items:center; gap:4px;
+  display:flex; align-items:center; justify-content:space-between; gap:4px;
+  width:100%;
   background:var(--felt-0); border:1px solid var(--line);
-  border-radius:99px; padding:3px;
+  border-radius:99px; padding:4px;
 }
 .step {
-  width:38px; height:34px; border-radius:99px;
-  font-size:20px; font-weight:700; color:var(--ink);
+  flex:0 0 auto;
+  width:56px; height:var(--tap); border-radius:99px;
+  font-size:26px; font-weight:700; line-height:1; color:var(--ink);
+  display:grid; place-items:center;
+  user-select:none; -webkit-user-select:none;
+  transition:background .12s, transform .12s;
 }
-.step:active { background:var(--line); }
-.step-val { min-width:30px; text-align:center; font-size:17px; font-weight:800; }
+/* :active is the only press feedback left once the tap highlight is off,
+   so make it unmissable rather than a faint tint */
+.step:active { background:var(--gold); color:#241a06; transform:scale(.92); }
+.step-val {
+  flex:1; text-align:center; font-size:20px; font-weight:800;
+  font-variant-numeric:tabular-nums;
+}
 
 /* pantry */
 .pantry { display:flex; flex-wrap:wrap; gap:6px; }
@@ -356,6 +367,24 @@ input[type=range]:active::-webkit-slider-thumb { transform:scale(1.12); }
   width:4px; height:4px; border-radius:50%; background:var(--amber);
 }
 
+/* the write-in placeholder, and the cards it becomes */
+.slot-add { display:flex; }
+.add-card {
+  width:100%; aspect-ratio:5/7;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+  border-radius:var(--r-md);
+  border:2px dashed var(--line);
+  background:rgba(19,36,32,.45);
+  color:var(--ink-faint);
+  transition:border-color .15s, color .15s, background .15s;
+}
+.add-card:active { border-color:var(--gold); color:var(--gold); background:rgba(61,44,16,.4); }
+.add-plus { font-size:32px; line-height:1; font-weight:300; }
+.add-label { font-size:12.5px; font-weight:650; letter-spacing:.01em; }
+
+.badge.mine { background:var(--gold); color:#241a06; }
+.face.mine { background:linear-gradient(160deg,#fdf6e6,#f2e6c9); }
+
 /* card controls */
 .slot-tools {
   display:flex; gap:6px; margin-top:8px;
@@ -455,6 +484,15 @@ input[type=range]:active::-webkit-slider-thumb { transform:scale(1.12); }
 }
 .list-actions { display:flex; gap:10px; padding:18px 0 6px; }
 .list-actions .pill-btn { flex:1; }
+
+/* ------------------------------ credit -------------------------- */
+.credit {
+  max-width:1420px; margin:0 auto;
+  padding:34px 28px 26px;
+  text-align:center;
+  font-size:12px; letter-spacing:.02em; color:var(--ink-faint);
+}
+.credit em { font-style:normal; color:var(--ink-dim); font-weight:650; }
 
 /* ------------------------------- tabs --------------------------- */
 .tabs {
